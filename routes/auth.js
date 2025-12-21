@@ -8,7 +8,7 @@ dotenv.config();
 
 const JWT_SECRETKEY = process.env.JWT_SECRET;
 
-router.post("register", async (req, res) => {
+router.post("/register", async (req, res) => {
   const { username, password } = req.body;
   try {
     const existingUser = await User.findOne({ username });
