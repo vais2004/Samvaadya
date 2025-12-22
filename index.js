@@ -44,6 +44,10 @@ io.on("connection", (socket) => {
   });
 });
 
+app.get("/", async (req, res) => {
+  res.send("Samvaadya backend is running successfully");
+});
+
 app.get("/messages", async (req, res) => {
   const { sender, receiver } = req.query;
   try {
