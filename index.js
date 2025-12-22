@@ -59,7 +59,7 @@ app.get("/messages", async (req, res) => {
     }).sort({ createdAt: 1 });
     res.json(messages);
   } catch (error) {
-    res.status(500), json({ message: "Error while fetching messages." });
+    res.status(500).json({ message: "Error while fetching messages." });
   }
 });
 
@@ -69,7 +69,7 @@ app.get("/users", async (req, res) => {
     const users = await User.find({ username: { $ne: currentUser } });
     res.json(users);
   } catch (error) {
-    res.status(500), json({ message: "Error while fetching users" });
+    res.status(500).json({ message: "Error while fetching users" });
   }
 });
 
