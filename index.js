@@ -6,7 +6,6 @@ const authRoutes = require("./routes/auth");
 const http = require("http");
 const { Server } = require("socket.io");
 const Messages = require("./models/Messages");
-const { json } = require("stream/consumers");
 const User = require("./models/User");
 
 dotenv.config();
