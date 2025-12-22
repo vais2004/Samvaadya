@@ -10,7 +10,7 @@ app.use(express.json());
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("Mongosdb connected"))
+  .then(() => console.log("Mongoosedb connected"))
   .catch((error) => console.error(error));
 
 app.use("/auth", authRoutes);
