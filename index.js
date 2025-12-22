@@ -44,7 +44,7 @@ io.on("connection", (socket) => {
   });
 });
 
-application.get("/messages", async (req, res) => {
+app.get("/messages", async (req, res) => {
   const { sender, receiver } = req.query;
   try {
     const messages = await Messages.find({
