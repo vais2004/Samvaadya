@@ -6,7 +6,7 @@ const authRoutes = require("./routes/auth");
 const http = require("http");
 const { Server } = require("socket.io");
 const Messages = require("./models/Messages");
-const User = require("./models/User");
+const Users = require("./models/User");
 
 dotenv.config();
 const app = express();
@@ -66,7 +66,7 @@ app.get("/messages", async (req, res) => {
 app.get("/users", async (req, res) => {
   const { currentUser } = req.query;
   try {
-    const users = await User.find({ username: { $ne: currentUser } });
+    const users = await Users.find({ username: { $ne: currentUser } });
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: "Error while fetching users" });

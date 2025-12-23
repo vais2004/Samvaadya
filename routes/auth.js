@@ -1,7 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const Users = require("../models/User");
 const dotenv = require("dotenv");
 const router = express.Router();
 dotenv.config();
@@ -11,7 +11,7 @@ const JWT_SECRETKEY = process.env.JWT_SECRET;
 router.post("/register", async (req, res) => {
   const { username, password } = req.body;
   try {
-    const existingUser = await User.findOne({ username });
+    const existingUser = await Users.findOne({ username });
     if (existingUser) {
       return res
         .status(400)
@@ -20,7 +20,7 @@ router.post("/register", async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const user = new User({
+    const user = new Users({
       username: username,
       password: hashedPassword,
     });
@@ -43,7 +43,7 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
   try {
-    const user = await User.findOne({ username });
+    const user = await Users.findOne({ username });
     if (!user) {
       return res.status(404).json({ message: "User not found." });
     }
