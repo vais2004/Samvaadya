@@ -31,6 +31,19 @@ app.use("/auth", authRoutes);
 io.on("connection", (socket) => {
   console.log("User connected", socket.id);
 
+  // 🔹 USER JOINS ROOM (username)
+  socket.on("join", (username) => {
+    socket.join(username);
+  });
+
+  // 🔹 TYPING EVENT
+  socket.on("typing", ({ sender, receiver }) => {
+    socket.to(receiver).emit("typing", {
+      sender,
+      receiver,
+    });
+  });
+
   socket.on("send_message", async (data) => {
     const { sender, receiver, message } = data;
     const newMessage = new Messages({ sender, receiver, message });
