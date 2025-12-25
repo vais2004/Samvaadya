@@ -2,13 +2,15 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const authRoutes = require("./routes/auth");
 const http = require("http");
 const { Server } = require("socket.io");
+
+const authRoutes = require("./routes/auth");
 const Messages = require("./models/Messages");
 const User = require("./models/User");
 
 dotenv.config();
+
 const app = express();
 const server = http.createServer(app);
 
@@ -22,63 +24,81 @@ app.use(express.json());
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("Mongoosedb connected"))
-  .catch((error) => console.error(error));
+  .catch((err) => console.error(err));
 
 app.use("/auth", authRoutes);
 
-// SOCKET LOGIC
+/* ================= SOCKET ================= */
+
 io.on("connection", (socket) => {
-  console.log("User connected", socket.id);
+  console.log("Connected:", socket.id);
 
   socket.on("join", (username) => {
     socket.join(username);
   });
 
+  // ✅ Typing indicator
   socket.on("typing", ({ sender, receiver }) => {
-    socket.to(receiver).emit("typing", { sender, receiver });
+    socket.to(receiver).emit("typing", sender);
   });
 
-  socket.on("send_message", async (data) => {
+  // ✅ Send message
+  socket.on("send_message", async ({ sender, receiver, message }) => {
     const msg = await Messages.create({
-      sender: data.sender,
-      receiver: data.receiver,
-      message: data.message,
+      sender,
+      receiver,
+      message,
       delivered: false,
       read: false,
     });
 
     // send to receiver
-    socket.to(data.receiver).emit("receive_message", msg);
+    socket.to(receiver).emit("receive_message", msg);
 
-    // mark delivered
+    // mark delivered AFTER receiver got it
     await Messages.findByIdAndUpdate(msg._id, { delivered: true });
 
-    // notify sender
-    socket.emit("message_delivered", { _id: msg._id });
+    // notify sender about delivery
+    socket.emit("message_delivered", msg._id);
   });
 
+  // ✅ Mark messages as read
   socket.on("message_read", async ({ sender, receiver }) => {
+    const updatedMessages = await Messages.find({
+      sender,
+      receiver,
+      read: false,
+    });
+
     await Messages.updateMany(
       { sender, receiver, read: false },
       { $set: { read: true } }
     );
 
-    socket.to(sender).emit("message_read", { sender: receiver });
+    // notify sender which messages were read
+    socket.to(sender).emit(
+      "messages_read",
+      updatedMessages.map((m) => m._id)
+    );
   });
 
   socket.on("disconnect", () => {
-    console.log("User disconnected", socket.id);
+    console.log("Disconnected:", socket.id);
   });
 });
 
+/* ================= API ================= */
+
 app.get("/messages", async (req, res) => {
   const { sender, receiver } = req.query;
+
   const messages = await Messages.find({
     $or: [
       { sender, receiver },
       { sender: receiver, receiver: sender },
     ],
   }).sort({ createdAt: 1 });
+
   res.json(messages);
 });
 
