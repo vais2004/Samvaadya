@@ -39,39 +39,38 @@ io.on("connection", (socket) => {
   });
 
   socket.on("send_message", async (data) => {
-    const newMessage = new Messages({
+    const newMessage = await Messages.create({
       sender: data.sender,
       receiver: data.receiver,
       message: data.message,
-      delivered: false, // initially false
-      read: false, // initially false
-      time: data.time,
+      delivered: false,
+      read: false,
     });
 
-    await newMessage.save();
-
-    // send to receiver
     socket.to(data.receiver).emit("receive_message", {
       ...data,
       _id: newMessage._id,
-      delivered: true, // receiver received
+      delivered: false,
+      read: false,
     });
 
-    // mark as delivered in DB
+    // ✅ NOW mark delivered
     await Messages.findByIdAndUpdate(newMessage._id, { delivered: true });
 
-    // notify sender about delivery
     socket.emit("message_delivered", { _id: newMessage._id });
   });
 
   socket.on("message_read", async ({ sender, receiver }) => {
-    // mark messages as read in DB
     await Messages.updateMany(
-      { sender, receiver, read: false },
+      {
+        sender,
+        receiver,
+        delivered: true,
+        read: false,
+      },
       { $set: { read: true } }
     );
 
-    // notify sender
     socket.to(sender).emit("message_read", { sender, receiver });
   });
 
