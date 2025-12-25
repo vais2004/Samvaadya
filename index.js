@@ -2,15 +2,13 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const authRoutes = require("./routes/auth");
 const http = require("http");
 const { Server } = require("socket.io");
-
 const Messages = require("./models/Messages");
 const User = require("./models/User");
-const authRoutes = require("./routes/auth");
 
 dotenv.config();
-
 const app = express();
 const server = http.createServer(app);
 
@@ -23,26 +21,25 @@ app.use(express.json());
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch(console.error);
+  .then(() => console.log("Mongoosedb connected"))
+  .catch((error) => console.error(error));
 
 app.use("/auth", authRoutes);
 
-/* ================= SOCKET ================= */
+// SOCKET LOGIC
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("User connected", socket.id);
 
   socket.on("join", (username) => {
     socket.join(username);
   });
 
   socket.on("typing", ({ sender, receiver }) => {
-    socket.to(receiver).emit("typing", { sender });
+    socket.to(receiver).emit("typing", { sender, receiver });
   });
 
-  /* ---------- SEND MESSAGE ---------- */
   socket.on("send_message", async (data) => {
-    const newMessage = await Messages.create({
+    const msg = await Messages.create({
       sender: data.sender,
       receiver: data.receiver,
       message: data.message,
@@ -50,19 +47,16 @@ io.on("connection", (socket) => {
       read: false,
     });
 
-    // receiver gets message
-    socket.to(data.receiver).emit("receive_message", newMessage);
+    // send to receiver
+    socket.to(data.receiver).emit("receive_message", msg);
 
     // mark delivered
-    await Messages.findByIdAndUpdate(newMessage._id, {
-      delivered: true,
-    });
+    await Messages.findByIdAndUpdate(msg._id, { delivered: true });
 
-    // sender gets delivery update
-    socket.emit("message_delivered", { _id: newMessage._id });
+    // notify sender
+    socket.emit("message_delivered", { _id: msg._id });
   });
 
-  /* ---------- READ MESSAGE ---------- */
   socket.on("message_read", async ({ sender, receiver }) => {
     await Messages.updateMany(
       { sender, receiver, read: false },
@@ -73,21 +67,18 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
+    console.log("User disconnected", socket.id);
   });
 });
 
-/* ================= API ================= */
 app.get("/messages", async (req, res) => {
   const { sender, receiver } = req.query;
-
   const messages = await Messages.find({
     $or: [
       { sender, receiver },
       { sender: receiver, receiver: sender },
     ],
   }).sort({ createdAt: 1 });
-
   res.json(messages);
 });
 
