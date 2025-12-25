@@ -29,6 +29,7 @@ mongoose
 app.use("/auth", authRoutes);
 
 /* ================= SOCKET ================= */
+
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
@@ -36,53 +37,58 @@ io.on("connection", (socket) => {
     socket.join(username);
   });
 
-  // Typing indicator
+  // ✅ Typing indicator
   socket.on("typing", ({ sender, receiver }) => {
     socket.to(receiver).emit("typing", sender);
   });
 
-  // Send message
+  // ✅ Send message - FIXED DELIVERY LOGIC
   socket.on("send_message", async ({ sender, receiver, message }) => {
-    try {
-      const msg = await Messages.create({
-        sender,
-        receiver,
-        message,
-        delivered: false,
-        read: false,
-      });
-
-      // send full message to receiver (with MongoDB _id)
-      socket.to(receiver).emit("receive_message", msg);
-
-      // mark delivered after sending
-      msg.delivered = true;
-      await msg.save();
-
-      // notify sender with correct MongoDB _id
-      socket.emit("message_delivered", msg._id);
-    } catch (error) {
-      console.error("Error sending message:", error);
-    }
-  });
-
-  // Mark messages as read
-  socket.on("message_read", async ({ sender, receiver }) => {
-    const updatedMessages = await Messages.find({
+    const msg = await Messages.create({
       sender,
       receiver,
+      message,
+      delivered: false,
       read: false,
     });
 
-    await Messages.updateMany(
-      { sender, receiver, read: false },
-      { $set: { read: true } }
-    );
+    // send to receiver
+    socket.to(receiver).emit("receive_message", msg);
 
-    socket.to(sender).emit(
-      "messages_read",
-      updatedMessages.map((m) => m._id)
-    );
+    // mark delivered immediately (when sent to server)
+    await Messages.findByIdAndUpdate(msg._id, { delivered: true });
+
+    // update the message object for delivery notification
+    msg.delivered = true;
+
+    // notify sender about delivery
+    socket.emit("message_delivered", msg._id);
+  });
+
+  // ✅ Mark messages as read - FIXED
+  socket.on("message_read", async ({ sender, receiver }) => {
+    try {
+      // Find all unread messages from sender to receiver
+      await Messages.updateMany(
+        { sender, receiver, read: false },
+        { $set: { read: true } }
+      );
+
+      // Get the updated message IDs
+      const updatedMessages = await Messages.find({
+        sender,
+        receiver,
+        read: true,
+      });
+
+      // notify sender which messages were read
+      socket.to(sender).emit(
+        "messages_read",
+        updatedMessages.map((m) => m._id)
+      );
+    } catch (error) {
+      console.error("Error marking messages as read:", error);
+    }
   });
 
   socket.on("disconnect", () => {
