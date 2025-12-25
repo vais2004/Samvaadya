@@ -29,80 +29,76 @@ mongoose
 app.use("/auth", authRoutes);
 
 /* ================= SOCKET ================= */
-
 io.on("connection", (socket) => {
-  console.log("Connected:", socket.id);
+  console.log("Connected socket:", socket.id);
 
   socket.on("join", (username) => {
+    console.log("User joined:", username);
     socket.join(username);
   });
 
-  // ✅ Typing indicator
+  // Typing indicator
   socket.on("typing", ({ sender, receiver }) => {
+    console.log(`${sender} is typing to ${receiver}`);
     socket.to(receiver).emit("typing", sender);
   });
 
-  // ✅ Send message - SIMPLIFIED VERSION
+  // Send message
   socket.on("send_message", async ({ sender, receiver, message }) => {
+    console.log("send_message received:", sender, receiver, message);
     try {
-      // Create message with all fields explicitly
       const msg = new Messages({
         sender,
         receiver,
         message,
-        delivered: true, // Mark as delivered when saved to server
+        delivered: false,
         read: false,
       });
-
       await msg.save();
+      console.log("Message saved in DB:", msg);
 
-      console.log("Message saved to DB:", {
-        _id: msg._id,
-        delivered: msg.delivered,
-        read: msg.read,
-      });
-
-      // Send to receiver
+      // Emit to receiver
       socket.to(receiver).emit("receive_message", msg);
+      console.log("Message sent to receiver:", receiver);
 
-      // Notify sender immediately
+      // Update delivered
+      await Messages.findByIdAndUpdate(msg._id, { delivered: true });
+      console.log("Message marked delivered:", msg._id);
+
+      // Notify sender
       socket.emit("message_delivered", msg._id);
-    } catch (error) {
-      console.error("Error saving message:", error);
+    } catch (err) {
+      console.error("Error in send_message:", err);
     }
   });
 
-  // ✅ Mark messages as read - SIMPLIFIED
+  // Mark messages as read
   socket.on("message_read", async ({ sender, receiver }) => {
+    console.log("message_read event:", sender, receiver);
     try {
-      console.log("Marking messages as read from", sender, "to", receiver);
-
-      // Update all messages from sender to receiver
-      const result = await Messages.updateMany(
-        {
-          sender: sender,
-          receiver: receiver,
-          read: false,
-        },
+      const updated = await Messages.updateMany(
+        { sender, receiver, read: false },
         { $set: { read: true } }
       );
+      console.log("Messages updated as read:", updated.modifiedCount);
 
-      console.log("Updated", result.modifiedCount, "messages as read");
-
-      // Get the message IDs that were updated
-      const updatedMessages = await Messages.find({
-        sender: sender,
-        receiver: receiver,
+      const readMsgs = await Messages.find({
+        sender,
+        receiver,
         read: true,
       }).select("_id");
+      console.log(
+        "Read message IDs:",
+        readMsgs.map((m) => m._id)
+      );
 
       // Notify sender
       socket.to(sender).emit(
         "messages_read",
-        updatedMessages.map((m) => m._id.toString())
+        readMsgs.map((m) => m._id.toString())
       );
-    } catch (error) {
-      console.error("Error marking messages as read:", error);
+    } catch (err) {
+      console.error("Error marking messages read:", err);
     }
   });
 
@@ -112,10 +108,8 @@ io.on("connection", (socket) => {
 });
 
 /* ================= API ================= */
-
 app.get("/messages", async (req, res) => {
   const { sender, receiver } = req.query;
-
   try {
     const messages = await Messages.find({
       $or: [
@@ -126,8 +120,8 @@ app.get("/messages", async (req, res) => {
 
     console.log("Fetched messages:", messages.length);
     res.json(messages);
-  } catch (error) {
-    console.error("Error fetching messages:", error);
+  } catch (err) {
+    console.error("Error fetching messages:", err);
     res.status(500).json({ error: "Failed to fetch messages" });
   }
 });
@@ -137,8 +131,8 @@ app.get("/users", async (req, res) => {
   try {
     const users = await User.find({ username: { $ne: currentUser } });
     res.json(users);
-  } catch (error) {
-    console.error("Error fetching users:", error);
+  } catch (err) {
+    console.error("Error fetching users:", err);
     res.status(500).json({ error: "Failed to fetch users" });
   }
 });

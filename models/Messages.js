@@ -5,16 +5,8 @@ const MessageSchema = new mongoose.Schema(
     sender: { type: String, required: true },
     receiver: { type: String, required: true },
     message: { type: String, required: true },
-    delivered: {
-      type: Boolean,
-      default: false,
-      required: true, // Add this
-    },
-    read: {
-      type: Boolean,
-      default: false,
-      required: true, // Add this
-    },
+    delivered: { type: Boolean, default: false, required: true },
+    read: { type: Boolean, default: false, required: true },
   },
   { timestamps: true }
 );
