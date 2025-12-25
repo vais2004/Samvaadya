@@ -29,7 +29,6 @@ mongoose
 app.use("/auth", authRoutes);
 
 /* ================= SOCKET ================= */
-
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
@@ -37,32 +36,37 @@ io.on("connection", (socket) => {
     socket.join(username);
   });
 
-  // ✅ Typing indicator
+  // Typing indicator
   socket.on("typing", ({ sender, receiver }) => {
     socket.to(receiver).emit("typing", sender);
   });
 
-  // ✅ Send message
+  // Send message
   socket.on("send_message", async ({ sender, receiver, message }) => {
-    const msg = await Messages.create({
-      sender,
-      receiver,
-      message,
-      delivered: false,
-      read: false,
-    });
+    try {
+      const msg = await Messages.create({
+        sender,
+        receiver,
+        message,
+        delivered: false,
+        read: false,
+      });
 
-    // send to receiver
-    socket.to(receiver).emit("receive_message", msg);
+      // send full message to receiver (with MongoDB _id)
+      socket.to(receiver).emit("receive_message", msg);
 
-    // mark delivered AFTER receiver got it
-    await Messages.findByIdAndUpdate(msg._id, { delivered: true });
+      // mark delivered after sending
+      msg.delivered = true;
+      await msg.save();
 
-    // notify sender about delivery
-    socket.emit("message_delivered", msg._id);
+      // notify sender with correct MongoDB _id
+      socket.emit("message_delivered", msg._id);
+    } catch (error) {
+      console.error("Error sending message:", error);
+    }
   });
 
-  // ✅ Mark messages as read
+  // Mark messages as read
   socket.on("message_read", async ({ sender, receiver }) => {
     const updatedMessages = await Messages.find({
       sender,
@@ -75,7 +79,6 @@ io.on("connection", (socket) => {
       { $set: { read: true } }
     );
 
-    // notify sender which messages were read
     socket.to(sender).emit(
       "messages_read",
       updatedMessages.map((m) => m._id)
