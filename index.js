@@ -44,7 +44,8 @@ io.on("connection", (socket) => {
       receiver: data.receiver,
       message: data.message,
       time: data.time,
-      status: "sent",
+      delivered: true, // ✓✓ delivered
+      read: false,
     });
 
     await newMessage.save();
@@ -59,7 +60,12 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("message_read", ({ sender, receiver }) => {
+  socket.on("message_read", async ({ sender, receiver }) => {
+    await Messages.updateMany(
+      { sender, receiver, read: false },
+      { $set: { read: true } }
+    );
+
     socket.to(sender).emit("message_read", { sender, receiver });
   });
 
