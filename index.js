@@ -31,25 +31,25 @@ app.use("/auth", authRoutes);
 io.on("connection", (socket) => {
   console.log("User connected", socket.id);
 
-  // 🔹 USER JOINS ROOM (username)
   socket.on("join", (username) => {
     socket.join(username);
   });
 
-  // 🔹 TYPING EVENT
   socket.on("typing", ({ sender, receiver }) => {
-    socket.to(receiver).emit("typing", {
-      sender,
-      receiver,
-    });
+    socket.to(receiver).emit("typing", { sender, receiver });
   });
 
   socket.on("send_message", async (data) => {
     const { sender, receiver, message } = data;
+
     const newMessage = new Messages({ sender, receiver, message });
     await newMessage.save();
 
-    socket.broadcast.emit("receive_message", data);
+    // send only to receiver
+    socket.to(receiver).emit("receive_message", {
+      ...data,
+      status: "delivered",
+    });
   });
 
   socket.on("disconnect", () => {
@@ -91,6 +91,7 @@ app.get("/health", (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
+
 server.listen(PORT, () => {
-  console.log(`Server is running on PORT ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
