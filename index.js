@@ -42,49 +42,64 @@ io.on("connection", (socket) => {
     socket.to(receiver).emit("typing", sender);
   });
 
-  // ✅ Send message - FIXED DELIVERY LOGIC
+  // ✅ Send message - SIMPLIFIED VERSION
   socket.on("send_message", async ({ sender, receiver, message }) => {
-    const msg = await Messages.create({
-      sender,
-      receiver,
-      message,
-      delivered: false,
-      read: false,
-    });
+    try {
+      // Create message with all fields explicitly
+      const msg = new Messages({
+        sender,
+        receiver,
+        message,
+        delivered: true, // Mark as delivered when saved to server
+        read: false,
+      });
 
-    // send to receiver
-    socket.to(receiver).emit("receive_message", msg);
+      await msg.save();
 
-    // mark delivered immediately (when sent to server)
-    await Messages.findByIdAndUpdate(msg._id, { delivered: true });
+      console.log("Message saved to DB:", {
+        _id: msg._id,
+        delivered: msg.delivered,
+        read: msg.read,
+      });
 
-    // update the message object for delivery notification
-    msg.delivered = true;
+      // Send to receiver
+      socket.to(receiver).emit("receive_message", msg);
 
-    // notify sender about delivery
-    socket.emit("message_delivered", msg._id);
+      // Notify sender immediately
+      socket.emit("message_delivered", msg._id);
+    } catch (error) {
+      console.error("Error saving message:", error);
+    }
   });
 
-  // ✅ Mark messages as read - FIXED
+  // ✅ Mark messages as read - SIMPLIFIED
   socket.on("message_read", async ({ sender, receiver }) => {
     try {
-      // Find all unread messages from sender to receiver
-      await Messages.updateMany(
-        { sender, receiver, read: false },
+      console.log("Marking messages as read from", sender, "to", receiver);
+
+      // Update all messages from sender to receiver
+      const result = await Messages.updateMany(
+        {
+          sender: sender,
+          receiver: receiver,
+          read: false,
+        },
         { $set: { read: true } }
       );
 
-      // Get the updated message IDs
-      const updatedMessages = await Messages.find({
-        sender,
-        receiver,
-        read: true,
-      });
+      console.log("Updated", result.modifiedCount, "messages as read");
 
-      // notify sender which messages were read
+      // Get the message IDs that were updated
+      const updatedMessages = await Messages.find({
+        sender: sender,
+        receiver: receiver,
+        read: true,
+      }).select("_id");
+
+      // Notify sender
       socket.to(sender).emit(
         "messages_read",
-        updatedMessages.map((m) => m._id)
+        updatedMessages.map((m) => m._id.toString())
       );
     } catch (error) {
       console.error("Error marking messages as read:", error);
@@ -101,20 +116,31 @@ io.on("connection", (socket) => {
 app.get("/messages", async (req, res) => {
   const { sender, receiver } = req.query;
 
-  const messages = await Messages.find({
-    $or: [
-      { sender, receiver },
-      { sender: receiver, receiver: sender },
-    ],
-  }).sort({ createdAt: 1 });
+  try {
+    const messages = await Messages.find({
+      $or: [
+        { sender, receiver },
+        { sender: receiver, receiver: sender },
+      ],
+    }).sort({ createdAt: 1 });
 
-  res.json(messages);
+    console.log("Fetched messages:", messages.length);
+    res.json(messages);
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+    res.status(500).json({ error: "Failed to fetch messages" });
+  }
 });
 
 app.get("/users", async (req, res) => {
   const { currentUser } = req.query;
-  const users = await User.find({ username: { $ne: currentUser } });
-  res.json(users);
+  try {
+    const users = await User.find({ username: { $ne: currentUser } });
+    res.json(users);
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
 });
 
 const PORT = process.env.PORT || 5000;
