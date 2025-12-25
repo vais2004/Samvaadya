@@ -11,10 +11,9 @@ const User = require("./models/User");
 dotenv.config();
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-  },
+  cors: { origin: "*" },
 });
 
 app.use(cors());
@@ -27,7 +26,7 @@ mongoose
 
 app.use("/auth", authRoutes);
 
-//socket io logic
+// SOCKET LOGIC
 io.on("connection", (socket) => {
   console.log("User connected", socket.id);
 
@@ -40,16 +39,28 @@ io.on("connection", (socket) => {
   });
 
   socket.on("send_message", async (data) => {
-    const { sender, receiver, message } = data;
+    const newMessage = new Messages({
+      sender: data.sender,
+      receiver: data.receiver,
+      message: data.message,
+      time: data.time,
+      status: "sent",
+    });
 
-    const newMessage = new Messages({ sender, receiver, message });
     await newMessage.save();
 
-    // send only to receiver
-    socket.to(receiver).emit("receive_message", {
+    socket.to(data.receiver).emit("receive_message", {
       ...data,
       status: "delivered",
     });
+
+    socket.emit("message_delivered", {
+      time: data.time,
+    });
+  });
+
+  socket.on("message_read", ({ sender, receiver }) => {
+    socket.to(sender).emit("message_read", { sender, receiver });
   });
 
   socket.on("disconnect", () => {
@@ -57,41 +68,22 @@ io.on("connection", (socket) => {
   });
 });
 
-app.get("/", async (req, res) => {
-  res.send("Samvaadya backend is running successfully");
-});
-
 app.get("/messages", async (req, res) => {
   const { sender, receiver } = req.query;
-  try {
-    const messages = await Messages.find({
-      $or: [
-        { sender, receiver },
-        { sender: receiver, receiver: sender },
-      ],
-    }).sort({ createdAt: 1 });
-    res.json(messages);
-  } catch (error) {
-    res.status(500).json({ message: "Error while fetching messages." });
-  }
+  const messages = await Messages.find({
+    $or: [
+      { sender, receiver },
+      { sender: receiver, receiver: sender },
+    ],
+  }).sort({ createdAt: 1 });
+  res.json(messages);
 });
 
 app.get("/users", async (req, res) => {
   const { currentUser } = req.query;
-  try {
-    const users = await User.find({ username: { $ne: currentUser } });
-    res.json(users);
-  } catch (error) {
-    res.status(500).json({ message: "Error while fetching users" });
-  }
-});
-
-app.get("/health", (req, res) => {
-  res.status(200).send("OK");
+  const users = await User.find({ username: { $ne: currentUser } });
+  res.json(users);
 });
 
 const PORT = process.env.PORT || 5000;
-
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
