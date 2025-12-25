@@ -86,6 +86,10 @@ app.get("/users", async (req, res) => {
   }
 });
 
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server is running on PORT ${PORT}`);
