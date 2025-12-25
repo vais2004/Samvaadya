@@ -43,20 +43,27 @@ io.on("connection", (socket) => {
       sender: data.sender,
       receiver: data.receiver,
       message: data.message,
-      delivered: false, // explicitly set
-      read: false, // explicitly set
-      time: data.time, // if using frontend time
+      delivered: false,
+      read: false,
+      time: data.time,
     });
 
     await newMessage.save();
 
+    // mark delivered when sent to receiver
+    await Messages.findByIdAndUpdate(newMessage._id, { delivered: true });
+
     // send to receiver
     socket
       .to(data.receiver)
-      .emit("receive_message", { ...data, _id: newMessage._id });
+      .emit("receive_message", {
+        ...data,
+        _id: newMessage._id,
+        delivered: true,
+      });
 
     // notify sender
-    socket.emit("message_sent", { _id: newMessage._id });
+    socket.emit("message_delivered", { _id: newMessage._id });
   });
 
   socket.on("message_read", async ({ sender, receiver }) => {
