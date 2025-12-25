@@ -14,6 +14,16 @@ const MessageSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+
+    // ✅ NEW FIELDS (REQUIRED FOR TICKS)
+    delivered: {
+      type: Boolean,
+      default: false,
+    },
+    read: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
