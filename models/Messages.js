@@ -1,14 +1,17 @@
 const mongoose = require("mongoose");
 
-const MessageSchema = new mongoose.Schema(
+const messageSchema = new mongoose.Schema(
   {
-    sender: { type: String, required: true },
-    receiver: { type: String, required: true },
-    message: { type: String, required: true },
-    delivered: { type: Boolean, default: false, required: true },
-    read: { type: Boolean, default: false, required: true },
+    sender: { type: String, require: true },
+    receiver: { type: String, require: true },
+    message: { type: String, require: true },
+    status: {
+      type: String,
+      enum: ["sent", "delivered", "read"],
+      default: "sent",
+    },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Messages", MessageSchema);
+module.exports = mongoose.model("Messages", messageSchema);

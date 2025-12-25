@@ -1,21 +1,23 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const dotenv = require("dotenv");
 const http = require("http");
+const dotenv = require("dotenv");
+const authRoutes = require("./routes/auth");
 const { Server } = require("socket.io");
 
-const authRoutes = require("./routes/auth");
 const Messages = require("./models/Messages");
 const User = require("./models/User");
 
 dotenv.config();
-
 const app = express();
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
 });
 
 app.use(cors());
@@ -23,91 +25,101 @@ app.use(express.json());
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("Mongoosedb connected"))
-  .catch((err) => console.error(err));
+  .then(() => console.log("Mongodb connected."))
+  .catch((error) => console.error(error));
 
-app.use("/auth", authRoutes);
+// socket io logic
+const connectedUsers = {};
 
-/* ================= SOCKET ================= */
 io.on("connection", (socket) => {
-  console.log("Connected socket:", socket.id);
+  console.log("User connected", socket.id);
 
-  socket.on("join", (username) => {
-    console.log("User joined:", username);
-    socket.join(username);
+  // Register connected user
+  socket.on("register", (username) => {
+    connectedUsers[username] = socket.id;
+    console.log(`User registered: ${username} (${socket.id})`);
   });
 
-  // Typing indicator
-  socket.on("typing", ({ sender, receiver }) => {
-    console.log(`${sender} is typing to ${receiver}`);
-    socket.to(receiver).emit("typing", sender);
-  });
+  // Message send logic
+  socket.on("send_message", async (data) => {
+    const { sender, receiver, message } = data;
+    const newMessage = new Messages({
+      sender,
+      receiver,
+      message,
+      status: "sent",
+    });
+    const savedMessage = await newMessage.save();
 
-  // Send message
-  socket.on("send_message", async ({ sender, receiver, message }) => {
-    console.log("send_message received:", sender, receiver, message);
-    try {
-      const msg = new Messages({
-        sender,
-        receiver,
-        message,
-        delivered: false,
-        read: false,
+    const messageWithTime = {
+      _id: savedMessage._id,
+      sender,
+      receiver,
+      message,
+      status: savedMessage.status,
+      createdAt: savedMessage.createdAt,
+    };
+
+    // Send message only to receiver
+    const receiverSocket = connectedUsers[receiver];
+    if (receiverSocket) {
+      io.to(receiverSocket).emit("receive_message", messageWithTime);
+
+      //update status to delivered
+      savedMessage.status = "delivered";
+      await savedMessage.save();
+
+      // Notify sender that the message was sent (single tick)
+      io.to(socket.id).emit("message_status_update", {
+        messageId: savedMessage._id,
+        status: "delivered",
       });
+    } else {
+      // Receiver offline → keep it as "sent"
+      io.to(socket.id).emit("message_status_update", {
+        messageId: savedMessage._id,
+        status: "sent",
+      });
+    }
+  });
+
+  // Typing indicators
+  socket.on("typing", ({ sender, receiver }) => {
+    const receiverSocket = connectedUsers[receiver];
+    if (receiverSocket) io.to(receiverSocket).emit("user_typing", { sender });
+  });
+
+  socket.on("stop_typing", ({ sender, receiver }) => {
+    const receiverSocket = connectedUsers[receiver];
+    if (receiverSocket)
+      io.to(receiverSocket).emit("user_stop_typing", { sender });
+  });
+
+  // Read receipts (double tick)
+  socket.on("message_read", async ({ messageId, reader }) => {
+    const msg = await Messages.findById(messageId);
+    if (msg && msg.receiver === reader) {
+      msg.status = "read";
       await msg.save();
-      console.log("Message saved in DB:", msg);
 
-      // Emit to receiver
-      socket.to(receiver).emit("receive_message", msg);
-      console.log("Message sent to receiver:", receiver);
-
-      // Update delivered
-      await Messages.findByIdAndUpdate(msg._id, { delivered: true });
-      console.log("Message marked delivered:", msg._id);
-
-      // Notify sender
-      socket.emit("message_delivered", msg._id);
-    } catch (err) {
-      console.error("Error in send_message:", err);
+      const senderSocket = connectedUsers[msg.sender];
+      if (senderSocket)
+        io.to(senderSocket).emit("message_read_update", {
+          messageId,
+          status: "read",
+        });
     }
   });
 
-  // Mark messages as read
-  socket.on("message_read", async ({ sender, receiver }) => {
-    console.log("message_read event:", sender, receiver);
-    try {
-      const updated = await Messages.updateMany(
-        { sender, receiver, read: false },
-        { $set: { read: true } }
-      );
-      console.log("Messages updated as read:", updated.modifiedCount);
-
-      const readMsgs = await Messages.find({
-        sender,
-        receiver,
-        read: true,
-      }).select("_id");
-      console.log(
-        "Read message IDs:",
-        readMsgs.map((m) => m._id)
-      );
-
-      // Notify sender
-      socket.to(sender).emit(
-        "messages_read",
-        readMsgs.map((m) => m._id.toString())
-      );
-    } catch (err) {
-      console.error("Error marking messages read:", err);
-    }
-  });
-
+  // Disconnect cleanup
   socket.on("disconnect", () => {
-    console.log("Disconnected:", socket.id);
+    for (const user in connectedUsers) {
+      if (connectedUsers[user] === socket.id) delete connectedUsers[user];
+    }
+    console.log("User disconnected", socket.id);
   });
 });
 
-/* ================= API ================= */
 app.get("/messages", async (req, res) => {
   const { sender, receiver } = req.query;
   try {
@@ -117,12 +129,9 @@ app.get("/messages", async (req, res) => {
         { sender: receiver, receiver: sender },
       ],
     }).sort({ createdAt: 1 });
-
-    console.log("Fetched messages:", messages.length);
     res.json(messages);
-  } catch (err) {
-    console.error("Error fetching messages:", err);
-    res.status(500).json({ error: "Failed to fetch messages" });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching messages" });
   }
 });
 
@@ -131,11 +140,12 @@ app.get("/users", async (req, res) => {
   try {
     const users = await User.find({ username: { $ne: currentUser } });
     res.json(users);
-  } catch (err) {
-    console.error("Error fetching users:", err);
-    res.status(500).json({ error: "Failed to fetch users" });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching users" });
   }
 });
+
+app.use("/auth", authRoutes);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
